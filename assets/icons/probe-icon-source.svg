@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Probe</title>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="#212121"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="25.5" fill="none" stroke="#3a3a3a"/>
+  <text x="64" y="65" fill="#ffffff" font-family="Segoe UI Variable Display, Segoe UI, sans-serif" font-size="60" font-weight="700" text-anchor="middle" dominant-baseline="central">P</text>
+</svg>
