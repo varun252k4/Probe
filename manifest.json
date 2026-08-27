@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Probe",
   "short_name": "Probe",
-  "version": "0.5.2",
+  "version": "1.0.0",
   "description": "Open focused follow-up conversations from selected ChatGPT responses without cluttering your main chat.",
   "icons": {
     "16": "assets/icons/probe-16.png",
