@@ -1,6 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">Probe</title>
-  <rect x="4" y="4" width="120" height="120" rx="26" fill="#212121"/>
-  <rect x="4.5" y="4.5" width="119" height="119" rx="25.5" fill="none" stroke="#3a3a3a"/>
-  <text x="64" y="65" fill="#ffffff" font-family="Segoe UI Variable Display, Segoe UI, sans-serif" font-size="60" font-weight="700" text-anchor="middle" dominant-baseline="central">P</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="probe-icon-title">
+  <title id="probe-icon-title">Probe</title>
+  <rect x="4" y="4" width="120" height="120" rx="27" fill="#18181b"/>
+  <rect x="4.75" y="4.75" width="118.5" height="118.5" rx="26.25" fill="none" stroke="#3f3f46" stroke-width="1.5"/>
+  <g transform="translate(19.9 37) scale(0.9)" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 48V12h6a10 10 0 0 1 0 20H0"/>
+    <path d="M22 28v20"/>
+    <path d="M22 36a8 8 0 0 1 8-8"/>
+    <circle cx="46" cy="38" r="10"/>
+    <path d="M62 12v36"/>
+    <path d="M62 28a10 10 0 0 1 0 20"/>
+    <path d="M78 38h20"/>
+    <path d="M98 38A10 10 0 1 0 93.7 46.2"/>
+  </g>
 </svg>

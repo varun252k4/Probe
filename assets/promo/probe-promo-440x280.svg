@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280" role="img" aria-labelledby="promo-title">
+  <title id="promo-title">Probe — ask about any part of a ChatGPT reply</title>
+
+  <defs>
+    <linearGradient id="tile-bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#17171a"/>
+      <stop offset="1" stop-color="#0c0c0e"/>
+    </linearGradient>
+    <filter id="card-lift" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="9" stdDeviation="11" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+  </defs>
+
+  <rect width="440" height="280" fill="url(#tile-bg)"/>
+
+  <!-- Brand column -->
+  <svg x="32" y="70" width="140" height="56.9" viewBox="-3.25 8.75 104.5 42.5">
+    <g fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 48V12h6a10 10 0 0 1 0 20H0"/>
+      <path d="M22 28v20"/>
+      <path d="M22 36a8 8 0 0 1 8-8"/>
+      <circle cx="46" cy="38" r="10"/>
+      <path d="M62 12v36"/>
+      <path d="M62 28a10 10 0 0 1 0 20"/>
+      <path d="M78 38h20"/>
+      <path d="M98 38A10 10 0 1 0 93.7 46.2"/>
+    </g>
+  </svg>
+
+  <g font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif">
+    <text x="32" y="162" font-size="16" font-weight="600" fill="#fafafa">Ask about any part</text>
+    <text x="32" y="184" font-size="16" font-weight="600" fill="#fafafa">of a ChatGPT reply</text>
+    <text x="32" y="212" font-size="12.5" font-weight="500" fill="#71717a">No API key needed</text>
+  </g>
+
+  <!-- ChatGPT answer block -->
+  <rect x="202" y="24" width="206" height="232" rx="14" fill="#17171a" stroke="#2b2b30"/>
+
+  <circle cx="222" cy="61" r="10" fill="#26262b" stroke="#3f3f46"/>
+  <circle cx="222" cy="61" r="3.5" fill="#a1a1aa"/>
+
+  <rect x="244" y="56" width="148" height="9" rx="4.5" fill="#3f3f46"/>
+  <rect x="244" y="72" width="130" height="9" rx="4.5" fill="#3f3f46"/>
+
+  <rect x="240" y="84" width="132" height="19" rx="4" fill="#3b82f6" opacity="0.34"/>
+  <rect x="244" y="89" width="124" height="9" rx="4.5" fill="#dbe7fb"/>
+
+  <!-- Selection trigger -->
+  <rect x="244" y="115" width="124" height="30" rx="10" fill="#232327" stroke="#4a4a52"/>
+  <text x="258" y="135" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#f4f4f5">Ask with Probe</text>
+  <circle cx="352" cy="130" r="9" fill="#ffffff"/>
+  <g stroke="#18181b" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M348.5 130h7"/>
+    <path d="M352.6 127 355.5 130l-2.9 3"/>
+  </g>
+
+  <!-- Probe card layered over the answer -->
+  <g filter="url(#card-lift)">
+    <rect x="216" y="158" width="180" height="80" rx="13" fill="#1f1f24" stroke="#3a3a42"/>
+  </g>
+  <svg x="230" y="170" width="46" height="18.7" viewBox="-3.25 8.75 104.5 42.5">
+    <g fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 48V12h6a10 10 0 0 1 0 20H0"/>
+      <path d="M22 28v20"/>
+      <path d="M22 36a8 8 0 0 1 8-8"/>
+      <circle cx="46" cy="38" r="10"/>
+      <path d="M62 12v36"/>
+      <path d="M62 28a10 10 0 0 1 0 20"/>
+      <path d="M78 38h20"/>
+      <path d="M98 38A10 10 0 1 0 93.7 46.2"/>
+    </g>
+  </svg>
+  <rect x="230" y="202" width="152" height="8" rx="4" fill="#52525b"/>
+  <rect x="230" y="215" width="134" height="8" rx="4" fill="#52525b"/>
+  <rect x="230" y="228" width="94" height="8" rx="4" fill="#3f3f46"/>
+</svg>
