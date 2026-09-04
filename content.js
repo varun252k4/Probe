@@ -1186,7 +1186,7 @@ function appendInlineToken(target, token) {
     const source = token.replace(/^\$\$?|\$\$?$/g, '').trim();
     math.className = token.startsWith('$$') ? 'sideask-math sideask-math-display' : 'sideask-math';
     math.dataset.source = source;
-    math.textContent = formatMathText(source);
+    renderFormula(math, source, token.startsWith('$$'));
     target.appendChild(math);
     return;
   }
@@ -1219,23 +1219,18 @@ function renderInlineMath(container) {
   });
 }
 
-function formatMathText(source) {
-  const symbols = {
-    '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ', '\\epsilon': 'ε',
-    '\\theta': 'θ', '\\lambda': 'λ', '\\mu': 'μ', '\\pi': 'π', '\\sigma': 'σ',
-    '\\phi': 'φ', '\\omega': 'ω', '\\Delta': 'Δ', '\\Sigma': 'Σ', '\\Omega': 'Ω',
-    '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\leq': '≤', '\\geq': '≥',
-    '\\neq': '≠', '\\approx': '≈', '\\infty': '∞', '\\rightarrow': '→', '\\leftarrow': '←',
-  };
-  let value = source
-    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
-    .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
-    .replace(/\\text\{([^{}]+)\}/g, '$1')
-    .replace(/\\left|\\right/g, '')
-    .replace(/\^\{([^{}]+)\}/g, '^($1)')
-    .replace(/_\{([^{}]+)\}/g, '_($1)');
-  Object.entries(symbols).forEach(([token, symbol]) => {
-    value = value.replaceAll(token, symbol);
-  });
-  return value.replace(/\\[,;! ]/g, ' ').replace(/\s+/g, ' ').trim();
+function renderFormula(target, source, displayMode) {
+  if (globalThis.katex?.render) {
+    try {
+      globalThis.katex.render(source, target, {
+        displayMode,
+        output: 'mathml',
+        throwOnError: false,
+        trust: false,
+        strict: 'ignore',
+      });
+      return;
+    } catch {}
+  }
+  target.textContent = source;
 }

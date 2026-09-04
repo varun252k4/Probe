@@ -29,7 +29,7 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "css": ["popup-ui.css"],
-      "js": ["provider-detector.js", "providers/chatgpt.js", "providers/open-webui.js", "content.js"],
+      "js": ["provider-detector.js", "providers/chatgpt.js", "providers/open-webui.js", "vendor/katex/katex.min.js", "content.js"],
       "run_at": "document_idle"
     }
   ]
