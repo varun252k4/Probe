@@ -11,9 +11,9 @@ steps once Probe is published.
 3. Enable **Developer mode**.
 4. Select **Load unpacked**.
 5. Choose the repository folder containing `manifest.json`.
-6. Open or refresh [ChatGPT](https://chatgpt.com/).
+6. Open or refresh [ChatGPT](https://chatgpt.com/) or your Open WebUI instance.
 
-Probe is now ready. Select text in a ChatGPT response and choose
+Probe is now ready. Select text in a supported assistant response and choose
 **Ask with Probe**.
 
 ## Update A Local Installation
@@ -54,12 +54,15 @@ upload the newly generated package.
 
 - If **Ask with Probe** does not appear, select text from a ChatGPT answer, not
   from your own prompt.
-- Refresh ChatGPT after installing, updating, or reloading the extension.
-- Sign in to ChatGPT before using Probe.
+- Refresh ChatGPT or Open WebUI after installing, updating, or reloading the extension.
+- Sign in to the provider before using Probe.
 - Keep the Probe card open when asking related follow-up questions.
 - Close and reopen the card if a Temporary Chat response stalls.
+- For Open WebUI, set a model override in Probe settings if Probe cannot infer
+   the selected model from the page.
 
 ## Supported Pages
 
 - `https://chatgpt.com/*`
 - `https://chat.openai.com/*`
+- Custom-hosted Open WebUI domains detected at runtime.

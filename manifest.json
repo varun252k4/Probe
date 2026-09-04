@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Probe",
   "short_name": "Probe",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Open focused follow-up conversations from selected ChatGPT responses without cluttering your main chat.",
   "icons": {
     "16": "assets/icons/probe-16.png",
@@ -11,11 +11,25 @@
     "128": "assets/icons/probe-128.png"
   },
   "permissions": ["storage"],
+  "action": {
+    "default_title": "Probe settings",
+    "default_popup": "options.html",
+    "default_icon": {
+      "16": "assets/icons/probe-16.png",
+      "32": "assets/icons/probe-32.png",
+      "48": "assets/icons/probe-48.png",
+      "128": "assets/icons/probe-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "matches": ["http://*/*", "https://*/*"],
       "css": ["popup-ui.css"],
-      "js": ["content.js"],
+      "js": ["provider-detector.js", "providers/chatgpt.js", "providers/open-webui.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

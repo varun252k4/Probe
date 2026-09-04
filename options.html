@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header class="head">
+    <span class="brand" aria-hidden="true">P</span>
+    <div>
+      <h1>Probe</h1>
+      <p>Settings apply to open cards immediately.</p>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Appearance</h2>
+
+      <label class="row" for="fontFamily">
+        <span class="label">Font</span>
+        <select id="fontFamily">
+          <option value="default">ChatGPT default</option>
+          <option value="system">System UI</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Monospace</option>
+        </select>
+      </label>
+
+      <label class="row" for="fontSize">
+        <span class="label">Text size <output id="fontSizeOut">13px</output></span>
+        <input type="range" id="fontSize" min="11" max="18" step="1">
+      </label>
+
+      <label class="row" for="accent">
+        <span class="label">Accent colour</span>
+        <input type="color" id="accent">
+      </label>
+    </section>
+
+    <section>
+      <h2>Open WebUI</h2>
+
+      <label class="row" for="openWebUIEnabled">
+        <span class="label">Enable Open WebUI support
+          <small>Works on custom domains when the page is an Open WebUI app.</small>
+        </span>
+        <input type="checkbox" id="openWebUIEnabled">
+      </label>
+
+      <label class="row" for="openWebUIModel">
+        <span class="label">Model override
+          <small>Optional. Leave blank to use the selected/default Open WebUI model.</small>
+        </span>
+        <input type="text" id="openWebUIModel" placeholder="e.g. llama3.1">
+      </label>
+    </section>
+
+    <section>
+      <h2>Privacy</h2>
+
+      <label class="row" for="saveHistory">
+        <span class="label">Save recent answers locally
+          <small>Up to 50 entries per conversation, stored in this browser only.</small>
+        </span>
+        <input type="checkbox" id="saveHistory">
+      </label>
+
+      <div class="row">
+        <span class="label">Stored answers <small id="historyCount">Counting…</small></span>
+        <button type="button" id="clearHistory" class="btn">Clear</button>
+      </div>
+    </section>
+
+    <div class="footer">
+      <button type="button" id="reset" class="btn">Reset to defaults</button>
+      <span id="status" class="status" role="status"></span>
+    </div>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

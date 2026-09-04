@@ -1,26 +1,114 @@
-const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"], .agent-turn';
-const SELECTORS = {
-  input: '#prompt-textarea',
-  sendButton: 'button[data-testid="send-button"]',
-  stopButton: 'button[data-testid="stop-button"], button[aria-label="Stop generating"]',
-  assistantMessage: '[data-message-author-role="assistant"]',
-};
-const FRAME_URL = 'https://chatgpt.com/?temporary-chat=true';
 const MAX_EXCERPT_LENGTH = 6000;
-const REQUEST_TIMEOUT_MS = 90000;
+
+const FORMAT_RULES =
+  'Formatting rules:\n' +
+  '- Reply in Markdown.\n' +
+  '- Put every code sample in a fenced block with a language tag.\n' +
+  '- Write any mathematics as LaTeX so it renders as a real formula, not as plain text.\n' +
+  '- Use a short bullet list or a table when comparing things.\n' +
+  '- If a diagram or flow would help, output one self-contained SVG inside a ```svg fenced block, ' +
+  'roughly 460x260, using only shapes and text, with no scripts, external images or stylesheets.';
+
+const RICH_TAGS = new Set(['p', 'br', 'strong', 'b', 'em', 'i', 'code', 'pre', 'ul', 'ol', 'li', 'img',
+  'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'a']);
+const SVG_TAGS = new Set(['svg', 'g', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse',
+  'text', 'tspan', 'defs', 'marker', 'title', 'desc', 'lineargradient', 'radialgradient', 'stop', 'clippath']);
+const SVG_ATTRS = new Set(['d', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+  'stroke-dasharray', 'viewbox', 'width', 'height', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
+  'points', 'transform', 'text-anchor', 'dominant-baseline', 'font-size', 'font-family', 'font-weight',
+  'opacity', 'fill-opacity', 'stroke-opacity', 'offset', 'stop-color', 'gradientunits', 'id',
+  'xmlns', 'preserveaspectratio', 'marker-end', 'marker-start', 'refx', 'refy', 'orient',
+  'markerwidth', 'markerheight']);
 
 const MAX_PANELS = 5;
+
+const FONT_STACKS = {
+  default: '"OpenAI Sans", "Segoe UI", system-ui, sans-serif',
+  system: 'system-ui, "Segoe UI", Roboto, Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+};
+
+const DEFAULT_SETTINGS = {
+  fontFamily: 'default',
+  fontSize: 13,
+  accent: '#2563eb',
+  openWebUIEnabled: true,
+  openWebUIModel: '',
+  saveHistory: true,
+};
+
+let settings = { ...DEFAULT_SETTINGS };
+let activeProvider = null;
+let initialized = false;
 
 let askBubble = null;
 let chooser = null;
 let lastSelectionText = '';
 let lastSelectionContext = null;
-let framePromise = null;
 let panelSequence = 0;
 let panelStackTop = 2147483001;
 const panels = new Set();
 
+const providerApi = {
+  get settings() { return settings; },
+  waitForElement,
+  revealCollapsedCode,
+  extractAnswer,
+  renderMarkdownishAnswer,
+};
+
 if (window.top === window) {
+  applySettings(settings);
+  watchSettings();
+  bootstrapProvider();
+}
+
+function applySettings(next) {
+  settings = { ...DEFAULT_SETTINGS, ...next };
+  const root = document.documentElement;
+  if (!root) {
+    document.addEventListener('DOMContentLoaded', () => applySettings(settings), { once: true });
+    return;
+  }
+  root.style.setProperty('--sideask-font', FONT_STACKS[settings.fontFamily] || FONT_STACKS.default);
+  root.style.setProperty('--sideask-font-size', `${settings.fontSize}px`);
+  root.style.setProperty('--sideask-accent', settings.accent);
+}
+
+function watchSettings() {
+  if (!globalThis.chrome?.storage?.sync) return;
+  chrome.storage.sync.get(DEFAULT_SETTINGS, (stored) => applySettings(stored));
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const next = { ...settings };
+    Object.entries(changes).forEach(([key, change]) => { next[key] = change.newValue; });
+    applySettings(next);
+  });
+}
+
+function bootstrapProvider() {
+  const provider = window.ProbeProviders?.detect(settings);
+  if (provider) {
+    initializeProvider(provider);
+    return;
+  }
+
+  const observer = new MutationObserver(() => {
+    const nextProvider = window.ProbeProviders?.detect(settings);
+    if (!nextProvider) return;
+    observer.disconnect();
+    initializeProvider(nextProvider);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 30000);
+}
+
+function initializeProvider(provider) {
+  if (initialized) return;
+  initialized = true;
+  activeProvider = provider;
+
   document.addEventListener('mouseup', onSelectionChange);
   document.addEventListener('keyup', onSelectionChange);
   document.addEventListener('selectionchange', debounce(onSelectionChange, 150));
@@ -38,12 +126,14 @@ if (window.top === window) {
     if (chooser && !chooser.contains(event.target)) removeChooser();
   });
 
-  const beginWarmup = () => {
-    const schedule = window.requestIdleCallback || ((callback) => setTimeout(callback, 500));
-    schedule(() => warmFrame(), { timeout: 1500 });
-  };
-  if (document.readyState === 'complete') beginWarmup();
-  else window.addEventListener('load', beginWarmup, { once: true });
+  if (provider.warmup) {
+    const beginWarmup = () => {
+      const schedule = window.requestIdleCallback || ((callback) => setTimeout(callback, 500));
+      schedule(() => provider.warmup(providerApi), { timeout: 1500 });
+    };
+    if (document.readyState === 'complete') beginWarmup();
+    else window.addEventListener('load', beginWarmup, { once: true });
+  }
 }
 
 function onSelectionChange(e) {
@@ -64,32 +154,19 @@ function onSelectionChange(e) {
   const range = selection.getRangeAt(0);
   const commonNode = range.commonAncestorContainer;
   const container = commonNode && (commonNode.nodeType === 1 ? commonNode : commonNode.parentElement);
-  const assistantEl = container ? container.closest(ASSISTANT_SELECTOR) : null;
+  const assistantEl = container ? activeProvider?.findAssistantElement?.(container) : null;
   if (!assistantEl) {
     removeBubble();
     return;
   }
 
   lastSelectionText = text;
-  lastSelectionContext = getSelectionContext(assistantEl);
+  lastSelectionContext = activeProvider?.getSelectionContext?.(assistantEl) || {
+    userQuestion: '',
+    fullAnswer: assistantEl.innerText.trim().slice(0, 12000),
+  };
   const rect = range.getBoundingClientRect();
   showBubble(rect);
-}
-
-function getSelectionContext(assistantElement) {
-  const messages = [...document.querySelectorAll('[data-message-author-role]')];
-  const assistantIndex = messages.indexOf(assistantElement);
-  let userQuestion = '';
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    if (messages[index].dataset.messageAuthorRole === 'user') {
-      userQuestion = messages[index].innerText.trim();
-      break;
-    }
-  }
-  return {
-    userQuestion: userQuestion.slice(0, 4000),
-    fullAnswer: assistantElement.innerText.trim().slice(0, 12000),
-  };
 }
 
 function debounce(fn, wait) {
@@ -403,12 +480,12 @@ function openPanel(excerpt, rect, sourceContext) {
     requestAnimationFrame(() => { thread.scrollTop = thread.scrollHeight; });
 
     const startedAt = Date.now();
-    let hasPartialAnswer = false;
+    let streaming = false;
     const waitingMessages = ['Thinking', 'Reading the selected context', 'Working through your question', 'Still working'];
     const timer = setInterval(() => {
       const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
       turn.elapsed.textContent = `${elapsedSeconds}s`;
-      if (!hasPartialAnswer) {
+      if (!streaming) {
         const messageIndex = elapsedSeconds < 3 ? 0 : elapsedSeconds < 7 ? 1 : elapsedSeconds < 12 ? 2 : 3;
         turn.status.textContent = waitingMessages[messageIndex];
       }
@@ -418,27 +495,24 @@ function openPanel(excerpt, rect, sourceContext) {
       session,
       buildSessionPrompt(session, question),
       requestController.signal,
-      (phase, partialAnswer) => {
+      // The answer is built off-screen and inserted once, so the thread never jumps mid-write.
+      (phase) => {
+        if (phase === 'Writing answer' || phase === 'Rendering image') streaming = true;
         turn.status.textContent = phase;
         subtitle.textContent = phase;
-        if (partialAnswer) {
-          hasPartialAnswer = true;
-          turn.skeleton.hidden = true;
-          turn.answerBox.textContent = partialAnswer;
-          thread.scrollTop = thread.scrollHeight;
-        }
       }
     )
       .then((answer) => {
         session.hasContext = true;
         session.pendingContext = false;
+        const wasAtBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
         turn.status.textContent = 'Complete';
         subtitle.textContent = 'Answer ready';
         turn.skeleton.hidden = true;
-        turn.answerBox.textContent = answer;
+        renderAnswer(turn.answerBox, answer);
         turn.resultActions.hidden = false;
-        thread.scrollTop = thread.scrollHeight;
-        saveHistory(session.excerpt, question, answer);
+        if (wasAtBottom) requestAnimationFrame(() => { thread.scrollTop = thread.scrollHeight; });
+        saveHistory(session.excerpt, question, answer.text);
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -499,7 +573,7 @@ function createTurn(question) {
   const answerBox = element.querySelector('.sideask-answer');
   const copyButton = element.querySelector('.sideask-copy');
   copyButton.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(answerBox.textContent);
+    await navigator.clipboard.writeText(answerBox.dataset.plain || answerBox.textContent);
     copyButton.textContent = 'Copied';
     setTimeout(() => { copyButton.textContent = 'Copy'; }, 1200);
   });
@@ -539,13 +613,12 @@ function closePanel(session) {
   if (!session || !panels.has(session)) return;
   session.abortController?.abort();
   session.abortController = null;
-  session.frame?.remove();
-  session.frame = null;
+  activeProvider?.closeSession?.(session);
   session.hasContext = false;
   session.element.remove();
   panels.delete(session);
   renumberSessions();
-  setTimeout(() => warmFrame(), 300);
+  if (activeProvider?.warmup) setTimeout(() => activeProvider.warmup(providerApi), 300);
 }
 
 window.addEventListener('resize', () => {
@@ -649,7 +722,8 @@ function truncate(str, max) {
 }
 
 function saveHistory(excerpt, question, answer) {
-  const key = `probe:${location.href.split('#')[0]}`;
+  if (!settings.saveHistory || !globalThis.chrome?.storage?.local) return;
+  const key = `probe:${activeProvider?.id || 'page'}:${location.href.split('#')[0]}`;
   chrome.storage.local.get([key], (data) => {
     const list = data[key] || [];
     list.push({ excerpt, question, answer, ts: Date.now() });
@@ -668,12 +742,15 @@ function buildPrompt(excerpt, question, sourceContext) {
     `Selected excerpt:\n${focusedExcerpt}\n\n` +
     `Follow-up question:\n${question}\n\n` +
     `Answer the follow-up directly and concisely. Use the broader context only when needed, ` +
-    `and do not repeat the full response.`
+    `and do not repeat the full response.\n\n${FORMAT_RULES}`
   );
 }
 
 function buildFollowUpPrompt(question) {
-  return `Follow-up question: ${question}\n\nAnswer directly and concisely using the context from this temporary chat.`;
+  return (
+    `Follow-up question: ${question}\n\n` +
+    `Answer directly and concisely using the context from this temporary chat.\n\n${FORMAT_RULES}`
+  );
 }
 
 function buildSessionPrompt(session, question) {
@@ -686,30 +763,240 @@ function buildAddedContextPrompt(excerpt, question) {
   return (
     `Here is another excerpt from the same response:\n${excerpt.slice(0, MAX_EXCERPT_LENGTH)}\n\n` +
     `Follow-up question:\n${question}\n\n` +
-    `Answer directly and concisely, using this new excerpt together with the earlier context.`
+    `Answer directly and concisely, using this new excerpt together with the earlier context.\n\n${FORMAT_RULES}`
   );
 }
 
-function createHiddenFrame(url) {
-  return new Promise((resolve, reject) => {
-    const iframe = document.createElement('iframe');
-    iframe.title = 'Probe private response session';
-    iframe.style.cssText = 'position:fixed; width:1px; height:1px; opacity:0; left:-9999px; top:-9999px; pointer-events:none;';
-    iframe.src = url;
-    const timeout = setTimeout(() => {
-      iframe.remove();
-      reject(new Error('The private response session took too long to load.'));
-    }, 20000);
-    iframe.addEventListener('load', () => {
-      clearTimeout(timeout);
-      resolve(iframe);
-    }, { once: true });
-    iframe.addEventListener('error', () => {
-      clearTimeout(timeout);
-      iframe.remove();
-      reject(new Error('Could not start the private response session.'));
-    }, { once: true });
-    document.body.appendChild(iframe);
+function renderAnswer(box, answer) {
+  box.dataset.plain = answer.text;
+  if (answer.content && answer.content.childNodes.length) {
+    box.classList.add('sideask-answer-rich');
+    box.replaceChildren(...answer.content.childNodes);
+  } else {
+    box.textContent = answer.text;
+  }
+}
+
+// ChatGPT renders SVG and other rich blocks as a preview whose source is absent from the DOM.
+function revealCollapsedCode(node) {
+  node.querySelectorAll('button').forEach((button) => {
+    const label = (button.getAttribute('aria-label') || button.textContent || '').trim();
+    if (label === 'Code' && button.getAttribute('aria-pressed') !== 'true') button.click();
+  });
+}
+
+function extractAnswer(node) {
+  // Import first so every later step works inside our own document.
+  const clone = document.importNode(node, true);
+  clone.querySelectorAll('script, style, button, .sr-only').forEach((el) => el.remove());
+
+  const container = document.createElement('div');
+  copyAllowedNodes(clone, container, false);
+  const text = container.textContent.trim();
+  renderSvgBlocks(container);
+  decorateCodeBlocks(container);
+  decorateImages(container);
+  return { text, content: container };
+}
+
+// KaTeX markup is kept intact because ChatGPT's own stylesheet and fonts render it in place.
+function sanitizeKatex(source) {
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll('script, style').forEach((el) => el.remove());
+  clone.querySelectorAll('.katex-mathml').forEach((el) => el.remove());
+  [clone, ...clone.querySelectorAll('*')].forEach((el) => {
+    [...el.attributes].forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (!['class', 'style', 'aria-hidden'].includes(name)) el.removeAttribute(attr.name);
+    });
+  });
+  return clone;
+}
+
+function copyAllowedNodes(source, target, inSvg) {
+  source.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      target.appendChild(document.createTextNode(child.nodeValue));
+      return;
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = child.localName.toLowerCase();
+    const isSvg = inSvg || tag === 'svg';
+
+    if (!isSvg && child.classList
+      && (child.classList.contains('katex') || child.classList.contains('katex-display'))) {
+      target.appendChild(sanitizeKatex(child));
+      return;
+    }
+
+    if (!isSvg && tag === 'pre') {
+      const codeEl = child.querySelector('code');
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = (codeEl || child).textContent;
+      pre.appendChild(code);
+      target.appendChild(pre);
+      return;
+    }
+
+    const allowed = isSvg ? SVG_TAGS.has(tag) : RICH_TAGS.has(tag);
+    if (!allowed) {
+      copyAllowedNodes(child, target, isSvg && inSvg);
+      return;
+    }
+
+    const element = isSvg
+      ? document.createElementNS('http://www.w3.org/2000/svg', child.localName)
+      : document.createElement(tag);
+
+    [...child.attributes].forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith('on')) return;
+      if (isSvg) {
+        if (!SVG_ATTRS.has(name)) return;
+      } else if (tag === 'img') {
+        if (!['src', 'alt', 'width', 'height'].includes(name)) return;
+        if (name === 'src' && !/^(https:|blob:)/i.test(attr.value)) return;
+      } else if (name === 'class') {
+        if (!attr.value.startsWith('sideask-')) return;
+      } else if (name === 'href') {
+        if (!/^https?:/i.test(attr.value)) return;
+      } else {
+        return;
+      }
+      element.setAttribute(attr.name, attr.value);
+    });
+
+    if (!isSvg && tag === 'a') {
+      element.setAttribute('target', '_blank');
+      element.setAttribute('rel', 'noopener noreferrer');
+    }
+
+    copyAllowedNodes(child, element, isSvg);
+    target.appendChild(element);
+  });
+}
+
+function makeToolButton(label) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'sideask-tool-btn';
+  button.textContent = label;
+  return button;
+}
+
+function flashLabel(button, temporary, original) {
+  button.textContent = temporary;
+  setTimeout(() => { button.textContent = original; }, 1200);
+}
+
+function decorateImages(container) {
+  container.querySelectorAll('img').forEach((img) => {
+    const source = img.getAttribute('src');
+    if (!source) return;
+
+    const figure = document.createElement('div');
+    figure.className = 'sideask-figure';
+    const bar = document.createElement('div');
+    bar.className = 'sideask-tool-bar';
+
+    const openBtn = makeToolButton('Open');
+    openBtn.addEventListener('click', () => window.open(source, '_blank', 'noopener'));
+
+    const downloadBtn = makeToolButton('Download');
+    downloadBtn.addEventListener('click', async () => {
+      try {
+        const response = await fetch(source);
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'probe-image.png';
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        flashLabel(downloadBtn, 'Saved', 'Download');
+      } catch {
+        window.open(source, '_blank', 'noopener');
+      }
+    });
+
+    bar.append(openBtn, downloadBtn);
+    img.replaceWith(figure);
+    figure.append(bar, img);
+  });
+}
+
+function decorateCodeBlocks(container) {
+  container.querySelectorAll('pre:not(.sideask-diagram-source)').forEach((pre) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'sideask-code';
+    const bar = document.createElement('div');
+    bar.className = 'sideask-tool-bar';
+    const copyBtn = makeToolButton('Copy');
+    copyBtn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(pre.textContent);
+      flashLabel(copyBtn, 'Copied', 'Copy');
+    });
+    bar.appendChild(copyBtn);
+    pre.replaceWith(wrap);
+    wrap.append(bar, pre);
+  });
+}
+
+function renderSvgBlocks(container) {
+  container.querySelectorAll('code').forEach((code) => {
+    const source = code.textContent.trim();
+    if (!/^<svg[\s>]/i.test(source) || !/<\/svg>$/i.test(source)) return;
+
+    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+    if (parsed.querySelector('parsererror')) return;
+    const svg = parsed.documentElement;
+    if (!svg || svg.localName.toLowerCase() !== 'svg') return;
+
+    const canvas = document.createElement('div');
+    canvas.className = 'sideask-diagram-canvas';
+    copyAllowedNodes({ childNodes: [svg] }, canvas, false);
+    if (!canvas.firstChild) return;
+
+    const figure = document.createElement('div');
+    figure.className = 'sideask-diagram';
+
+    const sourceBlock = document.createElement('pre');
+    sourceBlock.className = 'sideask-diagram-source';
+    sourceBlock.hidden = true;
+    const sourceCode = document.createElement('code');
+    sourceCode.textContent = source;
+    sourceBlock.appendChild(sourceCode);
+
+    const bar = document.createElement('div');
+    bar.className = 'sideask-tool-bar';
+
+    const codeBtn = makeToolButton('Code');
+    codeBtn.addEventListener('click', () => {
+      sourceBlock.hidden = !sourceBlock.hidden;
+      codeBtn.textContent = sourceBlock.hidden ? 'Code' : 'Diagram';
+    });
+
+    const copyBtn = makeToolButton('Copy');
+    copyBtn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(source);
+      flashLabel(copyBtn, 'Copied', 'Copy');
+    });
+
+    const downloadBtn = makeToolButton('Download');
+    downloadBtn.addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'probe-diagram.svg';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      flashLabel(downloadBtn, 'Saved', 'Download');
+    });
+
+    bar.append(codeBtn, copyBtn, downloadBtn);
+    figure.append(bar, canvas, sourceBlock);
+    (code.closest('pre') || code).replaceWith(figure);
   });
 }
 
@@ -735,106 +1022,40 @@ function waitForElement(doc, selector, predicate = () => true, timeoutMs = 20000
     });
     const timeout = setTimeout(() => {
       observer.disconnect();
-      reject(new Error('ChatGPT took too long to become ready.'));
+      reject(new Error('The response provider took too long to become ready.'));
     }, timeoutMs);
     observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true });
   });
 }
 
-function warmFrame() {
-  if (framePromise) return framePromise;
-  framePromise = createHiddenFrame(FRAME_URL).then(async (iframe) => {
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc) throw new Error('Could not access the private response session.');
-      await waitForElement(doc, SELECTORS.input);
-      return iframe;
-    } catch (error) {
-      iframe.remove();
-      throw error;
-    }
-  });
-  framePromise.catch(() => { framePromise = null; });
-  return framePromise;
-}
-
-async function takeWarmFrame() {
-  const pendingFrame = warmFrame();
-  try {
-    return await pendingFrame;
-  } finally {
-    if (framePromise === pendingFrame) framePromise = null;
-  }
-}
-
-function waitForAnswer(doc, initialCount, signal, onUpdate) {
-  return new Promise((resolve, reject) => {
-    let lastText = '';
-    let lastChangeAt = Date.now();
-
-    const finish = (error, answer) => {
-      clearInterval(checkInterval);
-      clearTimeout(timeout);
-      observer.disconnect();
-      signal.removeEventListener('abort', onAbort);
-      error ? reject(error) : resolve(answer);
-    };
-    const onAbort = () => finish(new DOMException('Request cancelled.', 'AbortError'));
-    const check = () => {
-      const messages = doc.querySelectorAll(SELECTORS.assistantMessage);
-      if (messages.length <= initialCount) return;
-      const text = messages[messages.length - 1].innerText.trim();
-      if (text && text !== lastText) {
-        lastText = text;
-        lastChangeAt = Date.now();
-        onUpdate('Writing answer', text);
-      }
-      const isGenerating = Boolean(doc.querySelector(SELECTORS.stopButton));
-      if (lastText && !isGenerating && Date.now() - lastChangeAt >= 700) finish(null, lastText);
-    };
-
-    const observer = new MutationObserver(check);
-    observer.observe(doc.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
-    const checkInterval = setInterval(check, 250);
-    const timeout = setTimeout(() => finish(new Error('The response timed out. Please try again.')), REQUEST_TIMEOUT_MS);
-    signal.addEventListener('abort', onAbort, { once: true });
-    check();
-  });
-}
-
 async function askInConversation(session, promptText, signal, onUpdate) {
-  onUpdate(session.frame ? 'Continuing conversation' : (framePromise ? 'Connecting' : 'Preparing private chat'));
-  const iframe = session.frame || await takeWarmFrame();
-  session.frame = iframe;
-  try {
-    if (signal.aborted) throw new DOMException('Request cancelled.', 'AbortError');
-    const doc = iframe.contentDocument;
-    if (!doc) throw new Error('Could not access the private response session.');
-    const input = await waitForElement(doc, SELECTORS.input);
-    const initialCount = doc.querySelectorAll(SELECTORS.assistantMessage).length;
+  if (!activeProvider?.ask) throw new Error('No response provider is active for this page.');
+  return activeProvider.ask(session, promptText, signal, onUpdate, providerApi);
+}
 
-    input.focus();
-    if (input.tagName === 'TEXTAREA') {
-      const setter = Object.getOwnPropertyDescriptor(iframe.contentWindow.HTMLTextAreaElement.prototype, 'value').set;
-      setter.call(input, promptText);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      doc.execCommand('insertText', false, promptText);
-      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: promptText }));
-    }
-    const sendBtn = await waitForElement(
-      doc,
-      SELECTORS.sendButton,
-      (button) => !button.disabled && button.getAttribute('aria-disabled') !== 'true'
-    );
-    if (signal.aborted) throw new DOMException('Request cancelled.', 'AbortError');
-    onUpdate('Thinking');
-    sendBtn.click();
-    return await waitForAnswer(doc, initialCount, signal, onUpdate);
-  } catch (error) {
-    iframe.remove();
-    if (session.frame === iframe) session.frame = null;
-    session.hasContext = false;
-    throw error;
+function renderMarkdownishAnswer(text) {
+  const container = document.createElement('div');
+  const parts = text.split(/```([\w-]*)\n([\s\S]*?)```/g);
+  for (let index = 0; index < parts.length; index += 3) {
+    appendTextBlock(container, parts[index]);
+    if (index + 2 >= parts.length) continue;
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (parts[index + 1]) code.className = `language-${parts[index + 1]}`;
+    code.textContent = parts[index + 2].trim();
+    pre.appendChild(code);
+    container.appendChild(pre);
   }
+  decorateCodeBlocks(container);
+  return container;
+}
+
+function appendTextBlock(container, text) {
+  text.split(/\n{2,}/).forEach((paragraph) => {
+    const value = paragraph.trim();
+    if (!value) return;
+    const p = document.createElement('p');
+    p.textContent = value;
+    container.appendChild(p);
+  });
 }
