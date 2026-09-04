@@ -1,4 +1,5 @@
 const DEFAULT_SETTINGS = {
+  theme: 'auto',
   fontFamily: 'default',
   fontSize: 13,
   accent: '#2563eb',

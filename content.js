@@ -30,6 +30,7 @@ const FONT_STACKS = {
 };
 
 const DEFAULT_SETTINGS = {
+  theme: 'auto',
   fontFamily: 'default',
   fontSize: 13,
   accent: '#2563eb',
@@ -71,6 +72,7 @@ function applySettings(next) {
     document.addEventListener('DOMContentLoaded', () => applySettings(settings), { once: true });
     return;
   }
+  root.dataset.sideaskTheme = settings.theme;
   root.style.setProperty('--sideask-font', FONT_STACKS[settings.fontFamily] || FONT_STACKS.default);
   root.style.setProperty('--sideask-font-size', `${settings.fontSize}px`);
   root.style.setProperty('--sideask-accent', settings.accent);
@@ -1035,27 +1037,205 @@ async function askInConversation(session, promptText, signal, onUpdate) {
 
 function renderMarkdownishAnswer(text) {
   const container = document.createElement('div');
-  const parts = text.split(/```([\w-]*)\n([\s\S]*?)```/g);
-  for (let index = 0; index < parts.length; index += 3) {
-    appendTextBlock(container, parts[index]);
-    if (index + 2 >= parts.length) continue;
+  const blocks = text.split(/```([\w-]*)\n?([\s\S]*?)```/g);
+  for (let index = 0; index < blocks.length; index += 3) {
+    appendMarkdownBlocks(container, blocks[index]);
+    if (index + 2 >= blocks.length) continue;
+    const language = (blocks[index + 1] || '').trim().toLowerCase();
+    const source = blocks[index + 2].trim();
     const pre = document.createElement('pre');
     const code = document.createElement('code');
-    if (parts[index + 1]) code.className = `language-${parts[index + 1]}`;
-    code.textContent = parts[index + 2].trim();
+    if (language) code.className = `language-${language}`;
+    code.textContent = source;
     pre.appendChild(code);
     container.appendChild(pre);
   }
+  renderInlineMath(container);
+  renderSvgBlocks(container);
   decorateCodeBlocks(container);
   return container;
 }
 
-function appendTextBlock(container, text) {
-  text.split(/\n{2,}/).forEach((paragraph) => {
-    const value = paragraph.trim();
-    if (!value) return;
+function appendMarkdownBlocks(container, text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const tableEnd = collectTable(lines, index);
+    if (tableEnd > index) {
+      appendTable(container, lines.slice(index, tableEnd));
+      index = tableEnd;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const element = document.createElement(`h${heading[1].length}`);
+      appendInlineMarkdown(element, heading[2].trim());
+      container.appendChild(element);
+      index += 1;
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quote = document.createElement('blockquote');
+      const quoteLines = [];
+      while (index < lines.length && /^>\s?/.test(lines[index])) {
+        quoteLines.push(lines[index].replace(/^>\s?/, ''));
+        index += 1;
+      }
+      appendInlineMarkdown(quote, quoteLines.join('\n'));
+      container.appendChild(quote);
+      continue;
+    }
+
+    if (/^\s*[-*+]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)) {
+      const ordered = /^\s*\d+[.)]\s+/.test(line);
+      const list = document.createElement(ordered ? 'ol' : 'ul');
+      const itemPattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
+      while (index < lines.length && itemPattern.test(lines[index])) {
+        const item = document.createElement('li');
+        appendInlineMarkdown(item, lines[index].replace(itemPattern, '').trim());
+        list.appendChild(item);
+        index += 1;
+      }
+      container.appendChild(list);
+      continue;
+    }
+
+    const paragraph = [];
+    while (index < lines.length && lines[index].trim()) {
+      if (paragraph.length && (/^(#{1,6})\s+/.test(lines[index]) || collectTable(lines, index) > index)) break;
+      paragraph.push(lines[index]);
+      index += 1;
+    }
     const p = document.createElement('p');
-    p.textContent = value;
+    appendInlineMarkdown(p, paragraph.join('\n'));
     container.appendChild(p);
+  }
+}
+
+function collectTable(lines, start) {
+  if (start + 1 >= lines.length) return start;
+  if (!lines[start].includes('|') || !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[start + 1])) return start;
+  let end = start + 2;
+  while (end < lines.length && lines[end].includes('|') && lines[end].trim()) end += 1;
+  return end;
+}
+
+function splitTableRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+}
+
+function appendTable(container, rows) {
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+  const headerRow = document.createElement('tr');
+  splitTableRow(rows[0]).forEach((cell) => {
+    const th = document.createElement('th');
+    appendInlineMarkdown(th, cell);
+    headerRow.appendChild(th);
   });
+  thead.appendChild(headerRow);
+  rows.slice(2).forEach((row) => {
+    const tr = document.createElement('tr');
+    splitTableRow(row).forEach((cell) => {
+      const td = document.createElement('td');
+      appendInlineMarkdown(td, cell);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.append(thead, tbody);
+  container.appendChild(table);
+}
+
+function appendInlineMarkdown(target, text) {
+  const pattern = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
+  let offset = 0;
+  text.replace(pattern, (match, _token, index) => {
+    appendPlainText(target, text.slice(offset, index));
+    appendInlineToken(target, match);
+    offset = index + match.length;
+    return match;
+  });
+  appendPlainText(target, text.slice(offset));
+}
+
+function appendPlainText(target, text) {
+  text.split('\n').forEach((part, index) => {
+    if (index) target.appendChild(document.createElement('br'));
+    if (part) target.appendChild(document.createTextNode(part));
+  });
+}
+
+function appendInlineToken(target, token) {
+  if (token.startsWith('`')) {
+    const code = document.createElement('code');
+    code.textContent = token.slice(1, -1);
+    target.appendChild(code);
+    return;
+  }
+  if (token.startsWith('$$') || token.startsWith('$')) {
+    const math = document.createElement('span');
+    const source = token.replace(/^\$\$?|\$\$?$/g, '').trim();
+    math.className = token.startsWith('$$') ? 'sideask-math sideask-math-display' : 'sideask-math';
+    math.dataset.source = source;
+    math.textContent = formatMathText(source);
+    target.appendChild(math);
+    return;
+  }
+  if (token.startsWith('**') || token.startsWith('__')) {
+    const strong = document.createElement('strong');
+    strong.textContent = token.slice(2, -2);
+    target.appendChild(strong);
+    return;
+  }
+  if (token.startsWith('*') || token.startsWith('_')) {
+    const em = document.createElement('em');
+    em.textContent = token.slice(1, -1);
+    target.appendChild(em);
+    return;
+  }
+  const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+  if (link) {
+    const anchor = document.createElement('a');
+    anchor.textContent = link[1];
+    anchor.href = link[2];
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    target.appendChild(anchor);
+  }
+}
+
+function renderInlineMath(container) {
+  container.querySelectorAll('.sideask-math').forEach((math) => {
+    math.setAttribute('aria-label', `Formula: ${math.dataset.source || math.textContent}`);
+  });
+}
+
+function formatMathText(source) {
+  const symbols = {
+    '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ', '\\epsilon': 'ε',
+    '\\theta': 'θ', '\\lambda': 'λ', '\\mu': 'μ', '\\pi': 'π', '\\sigma': 'σ',
+    '\\phi': 'φ', '\\omega': 'ω', '\\Delta': 'Δ', '\\Sigma': 'Σ', '\\Omega': 'Ω',
+    '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\leq': '≤', '\\geq': '≥',
+    '\\neq': '≠', '\\approx': '≈', '\\infty': '∞', '\\rightarrow': '→', '\\leftarrow': '←',
+  };
+  let value = source
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)')
+    .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
+    .replace(/\\text\{([^{}]+)\}/g, '$1')
+    .replace(/\\left|\\right/g, '')
+    .replace(/\^\{([^{}]+)\}/g, '^($1)')
+    .replace(/_\{([^{}]+)\}/g, '_($1)');
+  Object.entries(symbols).forEach(([token, symbol]) => {
+    value = value.replaceAll(token, symbol);
+  });
+  return value.replace(/\\[,;! ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
